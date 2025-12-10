@@ -33,7 +33,7 @@ You can check our our docs at [docs.readur.app](https://docs.readur.app).
 
 ```bash
 # Clone the repository
-git clone https://github.com/perfectra1n/readur
+git clone https://github.com/LiamJ74/readur
 cd readur
 
 # Start all services
