@@ -4,6 +4,8 @@ use sqlx::PgPool;
 use serde::{Deserialize, Serialize};
 use crate::models::document::Document;
 use sqlx::Row;
+use reqwest::Client;
+use std::env;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GraphNode {
@@ -29,14 +31,24 @@ pub struct GraphData {
 #[derive(Clone)]
 pub struct LLMService {
     pool: PgPool,
-    // client: reqwest::Client, // For calling LLM API
-    // api_key: String,
+    client: Client,
+    api_key: Option<String>,
+    api_url: String,
+    model: String,
 }
 
 impl LLMService {
     pub fn new(pool: PgPool) -> Self {
+        let api_key = env::var("LLM_API_KEY").ok();
+        let api_url = env::var("LLM_API_URL").unwrap_or_else(|_| "https://api.openai.com/v1/chat/completions".to_string());
+        let model = env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-3.5-turbo".to_string());
+
         Self {
             pool,
+            client: Client::new(),
+            api_key,
+            api_url,
+            model,
         }
     }
 
@@ -53,14 +65,64 @@ impl LLMService {
 
         let content = doc.ocr_text.or(doc.content).ok_or("No content to analyze")?;
 
-        // 2. Call LLM (Stub for now)
-        // TODO: Implement actual LLM call here using reqwest or similar client.
-        // It should call an endpoint like OpenAI /v1/chat/completions or Ollama.
-        // The prompt should instruct the LLM to extract entities and relationships in the GraphData JSON format.
-        let graph_data = self.mock_llm_response(&content);
+        // 2. Call LLM
+        let graph_data = if self.api_key.is_some() {
+            self.call_llm_api(&content).await?
+        } else {
+            self.mock_llm_response(&content)
+        };
 
         // 3. Store graph data
         self.store_graph_data(document_id, &graph_data).await?;
+
+        Ok(graph_data)
+    }
+
+    async fn call_llm_api(&self, content: &str) -> Result<GraphData, String> {
+        let prompt = format!(
+            "Extract entities (nodes) and relationships (edges) from the following text to build a knowledge graph. \
+            Return ONLY a JSON object with two keys: 'nodes' (list of objects with 'label', 'name', 'properties') \
+            and 'edges' (list of objects with 'source' (name), 'target' (name), 'relationship', 'properties'). \
+            Text: {}",
+            content.chars().take(4000).collect::<String>() // Truncate to avoid token limits for now
+        );
+
+        let request_body = serde_json::json!({
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant that extracts knowledge graphs from text."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.0
+        });
+
+        let response = self.client.post(&self.api_url)
+            .header("Authorization", format!("Bearer {}", self.api_key.as_ref().unwrap()))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to send request to LLM: {}", e))?;
+
+        if !response.status().is_success() {
+             return Err(format!("LLM API returned error: {}", response.status()));
+        }
+
+        let response_json: serde_json::Value = response.json().await
+            .map_err(|e| format!("Failed to parse LLM response: {}", e))?;
+
+        let content_str = response_json["choices"][0]["message"]["content"].as_str()
+            .ok_or("Invalid response format from LLM")?;
+
+        // Clean up markdown code blocks if present
+        let clean_json = content_str.trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+
+        let graph_data: GraphData = serde_json::from_str(clean_json)
+            .map_err(|e| format!("Failed to parse GraphData JSON: {}", e))?;
 
         Ok(graph_data)
     }
@@ -117,17 +179,11 @@ impl LLMService {
             .map_err(|e| e.to_string())?;
 
             let id: Uuid = row.get("id");
-            // Use label + name as key to reduce collision chance for same-named nodes of different types.
-            // In a real LLM scenario, the LLM should ideally provide a unique ID or we handle duplicates better.
-            let key = format!("{}:{}", node.label, node.name);
-            node_map.insert(key.clone(), id);
-            // Also insert just name as fallback if label is not strictly used in edge definition by the mock/LLM
-            node_map.entry(node.name.clone()).or_insert(id);
+            node_map.insert(node.name.clone(), id);
         }
 
         // Insert edges
         for edge in &data.edges {
-            // Try to find by name first (as per current struct), but could be improved to use label too if available in Edge struct
             let source_id = node_map.get(&edge.source).ok_or(format!("Source node {} not found", edge.source))?;
             let target_id = node_map.get(&edge.target).ok_or(format!("Target node {} not found", edge.target))?;
 

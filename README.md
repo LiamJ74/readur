@@ -27,6 +27,7 @@ You can check our our docs at [docs.readur.app](https://docs.readur.app).
 | 🐳 **Docker Ready** | Complete containerization with production-ready multi-stage builds | [Installation Guide](https://docs.readur.app/installation/), [Deployment Guide](https://docs.readur.app/deployment/) |
 | ⚡ **High Performance** | Rust backend for speed and reliability | [Architecture Documentation](https://docs.readur.app/dev/architecture/) |
 | 📊 **Analytics Dashboard** | Document statistics and processing status overview | [Analytics Dashboard Guide](https://docs.readur.app/analytics-dashboard-guide/) |
+| 🧠 **LLM Knowledge Graph** | Analyze documents with LLM to extract entities and relationships, visualized as a knowledge graph | [LLM Integration](https://docs.readur.app/llm-integration/) |
 
 ## 🚀 Quick Start
 

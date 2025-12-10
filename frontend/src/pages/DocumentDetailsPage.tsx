@@ -60,7 +60,7 @@ import {
   Hub as HubIcon,
 } from '@mui/icons-material';
 import { documentService, OcrResponse, type Document } from '../services/api';
-import { analyzeDocument, getDocumentGraph } from '../services/llm';
+import { analyzeDocument, getDocumentGraph, GraphData } from '../services/llm';
 import DocumentViewer from '../components/DocumentViewer';
 import LabelSelector from '../components/Labels/LabelSelector';
 import { type LabelData } from '../components/Labels/Label';
@@ -171,16 +171,19 @@ const DocumentDetailsPage: React.FC = () => {
   const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
 
   const [analyzing, setAnalyzing] = useState(false);
+  const [graphData, setGraphData] = useState<GraphData | null>(null);
+  const [showGraphDialog, setShowGraphDialog] = useState(false);
 
   const handleAnalyze = async () => {
     if (!document) return;
     setAnalyzing(true);
     try {
-        await analyzeDocument(document.id);
+        const data = await analyzeDocument(document.id);
+        setGraphData(data);
         setSnackbarMessage('Analysis completed. Graph updated.');
         setSnackbarSeverity('success');
         setSnackbarOpen(true);
-        // Optionally navigate to a graph view or refresh
+        setShowGraphDialog(true);
     } catch (e) {
         setSnackbarMessage('Analysis failed.');
         setSnackbarSeverity('error');
@@ -188,6 +191,17 @@ const DocumentDetailsPage: React.FC = () => {
     } finally {
         setAnalyzing(false);
     }
+  };
+
+  const handleShowGraph = async () => {
+      if (!document) return;
+      try {
+          const data = await getDocumentGraph(document.id);
+          setGraphData(data);
+          setShowGraphDialog(true);
+      } catch (e) {
+          console.error("Failed to fetch graph", e);
+      }
   };
 
   // Retry handlers
@@ -1701,6 +1715,41 @@ const DocumentDetailsPage: React.FC = () => {
           {snackbarMessage}
         </Alert>
       </Snackbar>
+
+      <Dialog
+        open={showGraphDialog}
+        onClose={() => setShowGraphDialog(false)}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: { height: '80vh' }
+        }}
+      >
+        <DialogTitle>Knowledge Graph</DialogTitle>
+        <DialogContent>
+            {graphData ? (
+                <Box sx={{ p: 2 }}>
+                    <Typography variant="h6">Nodes ({graphData.nodes.length})</Typography>
+                    <ul>
+                        {graphData.nodes.map((n, i) => (
+                            <li key={i}><strong>{n.label}</strong>: {n.name}</li>
+                        ))}
+                    </ul>
+                    <Typography variant="h6">Edges ({graphData.edges.length})</Typography>
+                    <ul>
+                        {graphData.edges.map((e, i) => (
+                            <li key={i}>{e.source} --[{e.relationship}]--> {e.target}</li>
+                        ))}
+                    </ul>
+                </Box>
+            ) : (
+                <Typography>No graph data available.</Typography>
+            )}
+        </DialogContent>
+        <DialogActions>
+             <Button onClick={() => setShowGraphDialog(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

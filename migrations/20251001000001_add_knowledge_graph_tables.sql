@@ -17,8 +17,5 @@ CREATE TABLE document_edges (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Index for faster lookups
 CREATE INDEX idx_document_nodes_document_id ON document_nodes(document_id);
 CREATE INDEX idx_document_edges_document_id ON document_edges(document_id);
-CREATE INDEX idx_document_edges_source ON document_edges(source_node_id);
-CREATE INDEX idx_document_edges_target ON document_edges(target_node_id);
